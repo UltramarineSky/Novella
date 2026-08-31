@@ -1,49 +1,40 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 const buildNumber = process.env.APP_BUILD_NUMBER;
-const localCompatibilityVersion = resolveLocalCompatibilityVersion();
 
 function resolveLocalCompatibilityVersion(): string {
+  let repositoryRoot: string;
   try {
-    const repositoryRoot = execFileSync(
+    repositoryRoot = execFileSync(
       'git',
       ['rev-parse', '--show-toplevel'],
       { encoding: 'utf8' },
     ).trim();
-    const latestTag = execFileSync(
-      'git',
-      ['tag', '--merged', 'HEAD', '--sort=-version:refname'],
-      { cwd: repositoryRoot, encoding: 'utf8' },
-    )
-      .split(/\r?\n/)
-      .find((tag) => /^v\d+\.\d+\.\d+$/.test(tag));
-    if (latestTag) return latestTag.slice(1);
   } catch {
-    // Local source archives may not include the Git metadata.
+    throw new Error('Unable to determine a release tag: Git metadata is required.');
   }
 
-  try {
-    const packageJson = JSON.parse(
-      readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
-    ) as { version?: unknown };
-    if (typeof packageJson.version === 'string' && packageJson.version.trim()) {
-      return packageJson.version.trim();
-    }
-  } catch {
-    // Keep a stable backend-compatible fallback for unusual config runners.
+  const latestTag = execFileSync(
+    'git',
+    ['tag', '--merged', 'HEAD', '--sort=-version:refname'],
+    { cwd: repositoryRoot, encoding: 'utf8' },
+  )
+    .split(/\r?\n/)
+    .find((tag) => /^v\d+\.\d+\.\d+$/.test(tag));
+  if (!latestTag) {
+    throw new Error('Unable to determine a release tag reachable from the current commit.');
   }
-  return '2.2.0';
+  return latestTag.slice(1);
 }
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'Novella',
   slug: 'novella',
-  // CI release tags override this; local and untagged builds advertise the
-  // newest backend-compatible release instead of an obsolete config default.
-  version: process.env.APP_VERSION || localCompatibilityVersion,
+  // CI release tags override this; local and untagged builds use the newest
+  // stable release tag reachable from the current commit.
+  version: process.env.APP_VERSION || resolveLocalCompatibilityVersion(),
   orientation: 'portrait',
   platforms: ['ios'],
   scheme: 'novella',

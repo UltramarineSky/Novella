@@ -51,18 +51,16 @@ jobs:
       - name: Set Build Metadata
         run: |
           set -euo pipefail
-          git fetch --no-tags origin main:refs/remotes/origin/main
+          git fetch --force origin main:refs/remotes/origin/main
+          git fetch --force --tags origin
 
           RELEASE_VERSION=""
-          PACKAGE_VERSION="$(sed -nE 's/^[[:space:]]*\"version\":[[:space:]]*\"([^\"]+)\".*/\1/p' apps/mobile/package.json | head -1)"
           LATEST_RELEASE_TAG="$(git tag --merged HEAD --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)"
-          COMPATIBILITY_VERSION="${LATEST_RELEASE_TAG#v}"
-          COMPATIBILITY_VERSION="${COMPATIBILITY_VERSION:-$PACKAGE_VERSION}"
-
-          if [ -z "$COMPATIBILITY_VERSION" ]; then
-            echo "::error::Unable to determine a backend-compatible app version."
+          if [ -z "$LATEST_RELEASE_TAG" ]; then
+            echo "::error::Unable to determine a stable release tag reachable from HEAD."
             exit 1
           fi
+          COMPATIBILITY_VERSION="${LATEST_RELEASE_TAG#v}"
 
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
             BUILD_NUMBER="$(git rev-list --count origin/main)"
@@ -75,10 +73,6 @@ jobs:
               exit 1
             fi
             RELEASE_VERSION="${BASH_REMATCH[1]}"
-            if [ "$PACKAGE_VERSION" != "$RELEASE_VERSION" ]; then
-              echo "::error::Mobile package version $PACKAGE_VERSION must match release tag $GITHUB_REF_NAME."
-              exit 1
-            fi
             BUILD_NUMBER="$(git rev-list --count HEAD)"
             BUILD_CHANNEL="tag"
             BUILD_LABEL="Build $BUILD_NUMBER"
